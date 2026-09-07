@@ -1,0 +1,14 @@
+{
+  "name": "letter-reader-mcpb",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "خواندن، خلاصه‌سازی و استخراج اطلاعات نامه‌های اسکن‌شده داخل Claude Desktop، همراه با آپلود مستقیم از موبایل",
+  "main": "server/index.js",
+  "dependencies": {
+    "@modelcontextprotocol/server": "^2.0.0",
+    "exceljs": "^4.4.0",
+    "qrcode": "^1.5.4",
+    "zod": "^4.4.3"
+  }
+}

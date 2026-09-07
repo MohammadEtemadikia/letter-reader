@@ -1,0 +1,63 @@
+{
+  "manifest_version": "0.3",
+  "name": "letter-reader",
+  "version": "1.0.0",
+  "description": "خواندن، خلاصه‌سازی و استخراج اطلاعات نامه‌های اسکن‌شده - همراه با آپلود مستقیم عکس از موبایل و خروجی اکسل",
+  "author": { "name": "Letter Reader" },
+  "server": {
+    "type": "node",
+    "entry_point": "server/index.js",
+    "mcp_config": {
+      "command": "node",
+      "args": ["${__dirname}/server/index.js"],
+      "env": {
+        "LETTERS_INBOX_DIR": "${user_config.inbox_dir}",
+        "LETTERS_ARCHIVE_DIR": "${user_config.archive_dir}",
+        "LETTERS_OUTPUT_XLSX": "${user_config.output_xlsx}",
+        "UPLOAD_PORT": "${user_config.upload_port}",
+        "LETTERS_LANGUAGE": "${user_config.language}"
+      }
+    }
+  },
+  "user_config": {
+    "inbox_dir": {
+      "type": "directory",
+      "title": "پوشه ورودی نامه‌ها",
+      "description": "عکس‌های جدید نامه (از موبایل یا به‌صورت دستی) اینجا قرار می‌گیرند",
+      "default": "${DOCUMENTS}/Letter Reader/Inbox",
+      "required": true
+    },
+    "archive_dir": {
+      "type": "directory",
+      "title": "پوشه آرشیو",
+      "description": "پس از پردازش، عکس نامه‌ها به این پوشه منتقل می‌شود",
+      "default": "${DOCUMENTS}/Letter Reader/Archive",
+      "required": true
+    },
+    "output_xlsx": {
+      "type": "file",
+      "title": "فایل خروجی اکسل",
+      "description": "خلاصه، توضیحات و اطلاعات هر نامه در این فایل ذخیره می‌شود",
+      "default": "${DOCUMENTS}/Letter Reader/letters.xlsx",
+      "required": true
+    },
+    "upload_port": {
+      "type": "number",
+      "title": "پورت سرور آپلود موبایل",
+      "description": "در صورت تداخل با برنامه دیگری روی سیستم، این عدد را تغییر بده",
+      "default": 8934,
+      "required": false
+    },
+    "language": {
+      "type": "string",
+      "title": "زبان رابط و خروجی / Output & UI language / Uitvoer- en interfacetaal",
+      "description": "یکی از این مقادیر را دقیقاً وارد کن: fa (فارسی), en (English), nl (Nederlands). نامه‌ها می‌توانند به هر زبانی باشند؛ این تنظیم فقط زبان صفحه آپلود موبایل و خروجی خلاصه‌ها/اکسل را مشخص می‌کند.",
+      "default": "fa",
+      "required": false
+    }
+  },
+  "compatibility": {
+    "platforms": ["darwin", "win32"],
+    "runtimes": { "node": ">=18" }
+  }
+}

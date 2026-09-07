@@ -1,0 +1,64 @@
+appId: nl.evimmakelaars.letterreader
+productName: Letter Reader
+copyright: Evim
+
+# Update installers are published to GitHub Releases; the packaged app checks
+# this feed on startup (see electron/main.cjs) instead of you having to
+# manually re-download and reinstall each release.
+publish:
+  provider: github
+  owner: MohammadEtemadikia
+  repo: letter-reader
+
+directories:
+  output: /tmp/letter-reader-dist
+  buildResources: build
+
+# Only the desktop shell ships in the app bundle; the Next.js server is added
+# as a resource by extraResources below.
+files:
+  - electron/**/*
+  - package.json
+  - "!**/*.map"
+
+# The Next.js server is copied in by scripts/after-pack.cjs, not here:
+# extraResources drops any directory named node_modules.
+afterPack: ./scripts/after-pack.cjs
+
+extraResources:
+  - from: build/icon.png
+    to: icon.png
+
+win:
+  icon: build/icon.png
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: always
+  createStartMenuShortcut: true
+  shortcutName: Letter Reader
+
+portable:
+  artifactName: "Letter-Reader-portable-${version}.exe"
+
+mac:
+  icon: build/icon.png
+  category: public.app-category.productivity
+  target:
+    - target: dmg
+      arch: [arm64, x64]
+  # Unsigned build: without this, macOS quarantines the app on first open.
+  identity: null
+
+linux:
+  icon: build/icon.png
+  category: Office
+  target:
+    - AppImage

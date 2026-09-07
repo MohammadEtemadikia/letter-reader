@@ -1,0 +1,97 @@
+:root {
+  --bg: #fbfaf8;
+  --surface: #ffffff;
+  --surface-2: #f4f2ee;
+  --ink: #1f2421;
+  --ink-soft: #5b625e;
+  --ink-faint: #8b9188;
+  --accent: #2e4b6e;
+  --accent-soft: #e7ecf2;
+  --accent-ink: #1c3350;
+  --rule: #ddd8d0;
+  --stamp: #a6402e;
+  --stamp-soft: #f4e6e2;
+  --good: #2e7d5b;
+  --good-soft: #e3f1ea;
+  --radius: 10px;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #14171a;
+    --surface: #1b1f23;
+    --surface-2: #21262b;
+    --ink: #ede9e2;
+    --ink-soft: #a8ada7;
+    --ink-faint: #767c76;
+    --accent: #8fb0da;
+    --accent-soft: #22303f;
+    --accent-ink: #cfe0f2;
+    --rule: #2b3136;
+    --stamp: #dd9987;
+    --stamp-soft: #3a2622;
+    --good: #7fd0a0;
+    --good-soft: #1e3126;
+  }
+}
+
+@font-face {
+  font-family: "Vazirmatn";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/vazirmatn-arabic-400-normal.woff2") format("woff2");
+  unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF, U+200C-200E;
+}
+@font-face {
+  font-family: "Vazirmatn";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/vazirmatn-arabic-700-normal.woff2") format("woff2");
+  unicode-range: U+0600-06FF, U+0750-077F, U+08A0-08FF, U+FB50-FDFF, U+FE70-FEFF, U+200C-200E;
+}
+@font-face {
+  font-family: "Vazirmatn";
+  font-style: normal;
+  font-weight: 400;
+  font-display: swap;
+  src: url("/fonts/vazirmatn-latin-400-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Vazirmatn";
+  font-style: normal;
+  font-weight: 700;
+  font-display: swap;
+  src: url("/fonts/vazirmatn-latin-700-normal.woff2") format("woff2");
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  padding: 0;
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: "Vazirmatn", system-ui, "Segoe UI", Tahoma, sans-serif;
+}
+
+button,
+select,
+input {
+  font-family: inherit;
+}
+
+::selection {
+  background: var(--accent-soft);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

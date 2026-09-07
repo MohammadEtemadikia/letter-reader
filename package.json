@@ -1,0 +1,50 @@
+{
+  "name": "letter-reader",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Local letter-summarizing desktop app with auto language detection and translation. Runs on your own Claude Code session.",
+  "main": "electron/main.cjs",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "dev": "next dev -p 3400",
+    "dev:upload": "node scripts/upload-server-standalone.cjs",
+    "build": "next build",
+    "start": "next start -p 3400",
+    "setup": "npm install --no-audit --no-fund && next build",
+    "lint": "next lint",
+    "doctor": "node scripts/doctor.mjs",
+    "build:app": "next build && node scripts/prepare-server.mjs",
+    "app": "npm run build:app && electron .",
+    "package": "npm run build:app && electron-builder --mac --win --publish never",
+    "package:mac": "npm run build:app && electron-builder --mac --publish never",
+    "package:win": "npm run build:app && electron-builder --win --publish never",
+    "package:linux": "npm run build:app && electron-builder --linux --publish never",
+    "package:win:exe": "npm run build:app && electron-builder --win --dir --publish never",
+    "release": "npm run build:app && electron-builder --mac --win --publish always",
+    "release:mac": "npm run build:app && electron-builder --mac --publish always",
+    "release:win": "npm run build:app && electron-builder --win --publish always"
+  },
+  "dependencies": {
+    "electron-updater": "^6.8.9",
+    "next": "^15.1.6",
+    "qrcode": "^1.5.4",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@fontsource/vazirmatn": "^5.3.0",
+    "@types/node": "^22.10.7",
+    "@types/qrcode": "^1.5.5",
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.3",
+    "electron": "^43.4.1",
+    "electron-builder": "^26.15.3",
+    "typescript": "^5.7.3"
+  },
+  "author": {
+    "name": "Evim"
+  }
+}
