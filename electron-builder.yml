@@ -24,6 +24,9 @@ files:
 # The Next.js server is copied in by scripts/after-pack.cjs, not here:
 # extraResources drops any directory named node_modules.
 afterPack: ./scripts/after-pack.cjs
+# Ad-hoc signs the mac app (see scripts/after-sign.cjs) — free, no Apple
+# Developer account, but avoids Gatekeeper's harsher "is damaged" message.
+afterSign: ./scripts/after-sign.cjs
 
 extraResources:
   - from: build/icon.png
@@ -54,7 +57,8 @@ mac:
   target:
     - target: dmg
       arch: [arm64, x64]
-  # Unsigned build: without this, macOS quarantines the app on first open.
+  # No paid Developer ID cert, so electron-builder's own signing is skipped —
+  # scripts/after-sign.cjs applies a free ad-hoc signature instead.
   identity: null
 
 linux:
