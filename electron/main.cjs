@@ -113,6 +113,32 @@ function serverEntry() {
   return fs.existsSync(local) ? local : packaged;
 }
 
+/**
+ * The binary used to run the headless Next.js server as a plain-Node child
+ * process (see ELECTRON_RUN_AS_NODE below).
+ *
+ * `process.execPath` is the app's *main* executable, whose Info.plist has no
+ * LSUIElement — macOS's Dock shows a tile for it no matter what the process
+ * actually does at runtime, which is why a second "exec" icon appeared next
+ * to the real app every time the server child process started. Electron's
+ * own bundled Helper.app *is* marked LSUIElement (it exists for exactly this
+ * kind of background child process), so packaged macOS builds re-exec that
+ * one instead. Windows/Linux have no such Dock concept, and dev runs (via
+ * `electron .`) don't have a product-named Helper to find, so both keep
+ * using the plain execPath.
+ */
+function nodeExecPath() {
+  if (!IS_MAC || !app.isPackaged) return process.execPath;
+  const contentsDir = path.dirname(path.dirname(process.execPath)); // .../Contents
+  // Derived from the actual installed binary's name, not app.getName() —
+  // that returns package.json's "name" ("letter-reader"), not the
+  // capitalized productFilename ("Letter Reader") the Helper.app is
+  // actually named after on disk.
+  const productFilename = path.basename(process.execPath);
+  const helperName = `${productFilename} Helper`;
+  return path.join(contentsDir, "Frameworks", `${helperName}.app`, "Contents", "MacOS", helperName);
+}
+
 async function startServer(dataDir) {
   const entry = serverEntry();
   if (!fs.existsSync(entry)) {
@@ -126,7 +152,7 @@ async function startServer(dataDir) {
 
   // ELECTRON_RUN_AS_NODE turns Electron's binary into a plain Node runtime,
   // so the server runs without Node being installed on the machine.
-  serverProcess = spawn(process.execPath, [entry], {
+  serverProcess = spawn(nodeExecPath(), [entry], {
     cwd: path.dirname(entry),
     env: {
       ...process.env,
@@ -143,6 +169,17 @@ async function startServer(dataDir) {
 
   serverProcess.stdout?.on("data", (chunk) => process.stdout.write(`[server] ${chunk}`));
   serverProcess.stderr?.on("data", (chunk) => process.stderr.write(`[server] ${chunk}`));
+  // Without this, a spawn failure (e.g. the executable path not existing)
+  // is an unhandled 'error' event — Node throws it as an uncaught exception
+  // outside any try/catch here, which silently kills the whole app with no
+  // dialog at all.
+  serverProcess.on("error", (error) => {
+    dialog.showErrorBox(
+      "Letter Reader could not start",
+      `Failed to start the application server process: ${error.message}`,
+    );
+    app.quit();
+  });
 
   await waitForServer(`http://127.0.0.1:${serverPort}`);
   return `http://127.0.0.1:${serverPort}`;
