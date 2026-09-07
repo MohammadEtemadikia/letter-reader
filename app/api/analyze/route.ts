@@ -19,6 +19,7 @@ export const runtime = "nodejs";
 export const maxDuration = 3600;
 
 type StreamEvent =
+  | { t: "total"; count: number }
   | { t: "status"; message: string }
   | { t: "activity"; detail: string }
   | { t: "batch_result"; letters: LetterResult[] }
@@ -123,6 +124,8 @@ export async function POST(request: NextRequest) {
       };
 
       let totalDone = 0;
+
+      send({ t: "total", count: selected.length });
 
       for (const [batchIndex, batchGroups] of batches.entries()) {
         if (request.signal.aborted) break;

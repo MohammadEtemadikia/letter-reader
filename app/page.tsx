@@ -8,6 +8,7 @@ import type { Health } from "@/lib/claude-cli";
 import type { PendingGroup } from "@/lib/inbox";
 
 type StreamEvent =
+  | { t: "total"; count: number }
   | { t: "status"; message: string }
   | { t: "activity"; detail: string }
   | { t: "batch_result"; letters: LetterResult[] }
@@ -33,6 +34,8 @@ export default function Home() {
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [processedTotal, setProcessedTotal] = useState(0);
   const [remaining, setRemaining] = useState(0);
+  const [runTotal, setRunTotal] = useState(0);
+  const [runProcessed, setRunProcessed] = useState(0);
   const [fileActionError, setFileActionError] = useState<string | null>(null);
   const [hasElectronBridge, setHasElectronBridge] = useState(false);
 
@@ -160,6 +163,8 @@ export default function Home() {
     setActivity([]);
     setStatusMessage("");
     setRemaining(0);
+    setRunTotal(0);
+    setRunProcessed(0);
     setTranslations({});
     setActiveView({});
     setTranslating({});
@@ -197,10 +202,13 @@ export default function Home() {
         for (const line of lines) {
           if (!line.trim()) continue;
           const event = JSON.parse(line) as StreamEvent;
-          if (event.t === "status") setStatusMessage(event.message);
+          if (event.t === "total") setRunTotal(event.count);
+          else if (event.t === "status") setStatusMessage(event.message);
           else if (event.t === "activity") setActivity((a) => [...a.slice(-4), event.detail]);
-          else if (event.t === "batch_result") setResults((r) => [...r, ...event.letters]);
-          else if (event.t === "batch_error")
+          else if (event.t === "batch_result") {
+            setResults((r) => [...r, ...event.letters]);
+            setRunProcessed((p) => p + event.letters.length);
+          } else if (event.t === "batch_error")
             setErrorMessage((prev) => (prev ? `${prev} | ${event.message}` : event.message));
           else if (event.t === "done") {
             setStatusMessage(t.statusDone(event.count));
@@ -385,6 +393,19 @@ export default function Home() {
             )}
           </div>
 
+          {running && runTotal > 0 && (
+            <div className="progress-wrap">
+              <div className="progress-track">
+                <div
+                  className="progress-fill"
+                  style={{ width: `${Math.min(100, (runProcessed / runTotal) * 100)}%` }}
+                />
+              </div>
+              <span className="progress-label">
+                {runProcessed} / {runTotal}
+              </span>
+            </div>
+          )}
           {statusMessage && <p className="status-line">{statusMessage}</p>}
           {activity.length > 0 && (
             <ul className="activity-log">
@@ -442,6 +463,11 @@ export default function Home() {
                           </button>
                         ))}
                       </div>
+                      {busyLang && (
+                        <div className="progress-track indeterminate">
+                          <div className="progress-fill-indeterminate" />
+                        </div>
+                      )}
                       {translateError[i] && <p className="error-line">{translateError[i]}</p>}
 
                       <div className="letter-card-body" dir={dir} lang={data.language || undefined}>
@@ -723,6 +749,52 @@ export default function Home() {
           color: var(--ink-soft);
           font-size: 0.88rem;
           margin: 0;
+        }
+        .progress-wrap {
+          display: flex;
+          align-items: center;
+          gap: 0.6rem;
+        }
+        .progress-track {
+          flex: 1;
+          height: 8px;
+          border-radius: 999px;
+          background: var(--surface-2);
+          overflow: hidden;
+        }
+        .progress-fill {
+          height: 100%;
+          background: var(--accent);
+          border-radius: 999px;
+          transition: width 0.3s ease;
+        }
+        .progress-label {
+          flex: none;
+          font-size: 0.78rem;
+          color: var(--ink-faint);
+          font-variant-numeric: tabular-nums;
+        }
+        .progress-track.indeterminate {
+          height: 4px;
+          margin-bottom: 0.7rem;
+          position: relative;
+        }
+        .progress-fill-indeterminate {
+          position: absolute;
+          top: 0;
+          bottom: 0;
+          width: 40%;
+          background: var(--accent);
+          border-radius: 999px;
+          animation: indeterminate-slide 1.1s ease-in-out infinite;
+        }
+        @keyframes indeterminate-slide {
+          0% {
+            left: -40%;
+          }
+          100% {
+            left: 100%;
+          }
         }
         .activity-log {
           list-style: none;
