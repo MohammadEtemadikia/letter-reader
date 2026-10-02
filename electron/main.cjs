@@ -11,7 +11,7 @@
  *
  * A second, separate HTTP server (upload-server.cjs) is started alongside the
  * main one, bound to the LAN instead of localhost, so a phone on the same
- * Wi-Fi can send letter photos straight into the Inbox folder.
+ * Wi-Fi can send photos of post straight into the Inbox folder.
  */
 const { app, BrowserWindow, shell, dialog, Menu, ipcMain } = require("electron");
 const { execFile, spawn } = require("child_process");
@@ -336,22 +336,22 @@ function setupAutoUpdater() {
 /* -------------------------------------------------------------------------- */
 
 /**
- * Opens the one persistent letters.xlsx directly in the user's spreadsheet
- * app, instead of the renderer triggering a browser-style download — a
- * download link would save a fresh, separately-named copy every time it's
- * clicked, which is the opposite of "everything in one table."
+ * Opens the one persistent administration.xlsx directly in the user's
+ * spreadsheet app, instead of the renderer triggering a browser-style
+ * download — a download link would save a fresh, separately-named copy every
+ * time it's clicked, which is the opposite of "everything in one workbook."
  */
 ipcMain.handle("open-output-file", async () => {
   if (!dataDirPath) return { ok: false, error: "not ready yet" };
-  const filePath = path.join(dataDirPath, "letters.xlsx");
-  if (!fs.existsSync(filePath)) return { ok: false, error: "no letters processed yet" };
+  const filePath = path.join(dataDirPath, "administration.xlsx");
+  if (!fs.existsSync(filePath)) return { ok: false, error: "no documents processed yet" };
   const result = await shell.openPath(filePath);
   return result ? { ok: false, error: result } : { ok: true };
 });
 
 ipcMain.handle("open-output-folder", async () => {
   if (!dataDirPath) return { ok: false, error: "not ready yet" };
-  const filePath = path.join(dataDirPath, "letters.xlsx");
+  const filePath = path.join(dataDirPath, "administration.xlsx");
   if (fs.existsSync(filePath)) shell.showItemInFolder(filePath);
   else shell.openPath(dataDirPath);
   return { ok: true };

@@ -2,20 +2,10 @@ import { NextRequest } from "next/server";
 import { createStagingDir, removeStagingDir } from "@/lib/inbox";
 import { BLOCKED_TOOLS, checkHealth, runClaudeOnce, writeRunFiles } from "@/lib/claude-cli";
 import { buildTranslationInstruction, buildTranslationSystemPrompt, isLang } from "@/lib/prompt";
-import type { LetterResult } from "@/lib/letter";
+import { TRANSLATABLE_KEYS, type ExtractedFields } from "@/lib/document";
 
 export const runtime = "nodejs";
 export const maxDuration = 120;
-
-const REQUIRED_KEYS: (keyof Omit<LetterResult, "filename" | "language">)[] = [
-  "sender",
-  "recipient",
-  "date",
-  "subject",
-  "short_summary",
-  "full_description",
-  "action_needed",
-];
 
 function extractJsonObject(raw: string): unknown {
   const trimmed = raw.trim();
@@ -27,18 +17,23 @@ function extractJsonObject(raw: string): unknown {
   return JSON.parse(slice);
 }
 
-function isLetterLike(value: unknown): value is LetterResult {
+function isFieldsLike(value: unknown): value is ExtractedFields {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
-  return typeof v.filename === "string" && REQUIRED_KEYS.every((key) => typeof v[key] === "string");
+  return TRANSLATABLE_KEYS.every((key) => typeof v[key] === "string");
 }
 
+/**
+ * Translates only the prose half of a document. The filing fields (status,
+ * type, company, dates, amounts) are codes, not language, so they never make
+ * the round trip — which also keeps this call small and fast.
+ */
 export async function POST(request: NextRequest) {
   const body = await request.json().catch(() => ({}));
-  const letter = body?.letter;
+  const fields = body?.fields;
   const targetLang = body?.targetLang;
 
-  if (!isLetterLike(letter) || !isLang(targetLang)) {
+  if (!isFieldsLike(fields) || !isLang(targetLang)) {
     return Response.json({ error: "invalid request" }, { status: 400 });
   }
 
@@ -47,10 +42,13 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: "Claude Code is not ready" }, { status: 503 });
   }
 
+  const payload: Record<string, string> = { language: fields.language };
+  for (const key of TRANSLATABLE_KEYS) payload[key] = fields[key];
+
   const stagingDir = await createStagingDir();
   try {
     const runFileArgs = await writeRunFiles(stagingDir, buildTranslationSystemPrompt(targetLang), "medium");
-    const instruction = buildTranslationInstruction(letter, targetLang);
+    const instruction = buildTranslationInstruction(payload, targetLang);
 
     const result = await runClaudeOnce(
       [
@@ -86,8 +84,7 @@ export async function POST(request: NextRequest) {
     }
 
     const item = parsed as Record<string, unknown>;
-    const translated: LetterResult = {
-      filename: letter.filename,
+    const translated: ExtractedFields = {
       language: targetLang,
       sender: "",
       recipient: "",
@@ -97,11 +94,11 @@ export async function POST(request: NextRequest) {
       full_description: "",
       action_needed: "",
     };
-    for (const key of REQUIRED_KEYS) {
-      translated[key] = typeof item[key] === "string" ? (item[key] as string) : letter[key];
+    for (const key of TRANSLATABLE_KEYS) {
+      translated[key] = typeof item[key] === "string" ? (item[key] as string) : fields[key];
     }
 
-    return Response.json({ letter: translated });
+    return Response.json({ fields: translated });
   } finally {
     await removeStagingDir(stagingDir);
   }

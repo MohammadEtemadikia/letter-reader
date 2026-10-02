@@ -2,7 +2,7 @@
   "name": "letter-reader",
   "version": "1.0.0",
   "private": true,
-  "description": "Local letter-summarizing desktop app with auto language detection and translation. Runs on your own Claude Code session.",
+  "description": "Local administration assistant: reads scanned post, files it per company into workflow buckets, and keeps a per-company Excel workbook. Runs on your own Claude Code session.",
   "main": "electron/main.cjs",
   "engines": {
     "node": ">=20"

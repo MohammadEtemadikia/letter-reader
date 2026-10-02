@@ -16,7 +16,7 @@ export async function GET() {
   return new Response(new Uint8Array(bytes), {
     headers: {
       "Content-Type": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-      "Content-Disposition": 'attachment; filename="letters.xlsx"',
+      "Content-Disposition": 'attachment; filename="administration.xlsx"',
       "Cache-Control": "no-store",
     },
   });

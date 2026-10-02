@@ -12,7 +12,10 @@ import {
 } from "@/lib/inbox";
 import { BLOCKED_TOOLS, checkHealth, spawnClaude, writeRunFiles } from "@/lib/claude-cli";
 import { buildAnalysisSystemPrompt, buildInstruction, type InstructionGroup } from "@/lib/prompt";
-import { appendLetters, type LetterResult } from "@/lib/xlsx-writer";
+import { listCompanies } from "@/lib/companies";
+import { appendDocuments, buildRecord, listDocuments } from "@/lib/documents";
+import type { DocumentRecord } from "@/lib/document";
+import { writeWorkbook } from "@/lib/xlsx-writer";
 import { COPY } from "@/lib/i18n";
 
 export const runtime = "nodejs";
@@ -22,20 +25,10 @@ type StreamEvent =
   | { t: "total"; count: number }
   | { t: "status"; message: string }
   | { t: "activity"; detail: string }
-  | { t: "batch_result"; letters: LetterResult[] }
+  | { t: "batch_result"; documents: DocumentRecord[] }
   | { t: "batch_error"; message: string }
   | { t: "done"; count: number; remaining: number }
   | { t: "error"; message: string };
-
-const REQUIRED_KEYS: (keyof LetterResult)[] = [
-  "sender",
-  "recipient",
-  "date",
-  "subject",
-  "short_summary",
-  "full_description",
-  "action_needed",
-];
 
 function extractJson(raw: string): unknown {
   const trimmed = raw.trim();
@@ -76,6 +69,10 @@ function chunkByFileCount(groups: PendingGroup[], maxFilesPerBatch: number): Pen
   return batches;
 }
 
+function text(value: unknown): string {
+  return typeof value === "string" ? value : "";
+}
+
 export async function POST(request: NextRequest) {
   const encoder = new TextEncoder();
 
@@ -109,6 +106,11 @@ export async function POST(request: NextRequest) {
     return Response.json({ error: message }, { status: 503 });
   }
 
+  const companies = await listCompanies();
+  const validCompanyIds = new Set(companies.map((c) => c.id));
+  const today = new Date().toISOString().slice(0, 10);
+  const systemPrompt = buildAnalysisSystemPrompt(companies, today);
+
   const batches = chunkByFileCount(selected, BATCH_SIZE);
 
   const stream = new ReadableStream<Uint8Array>({
@@ -130,13 +132,13 @@ export async function POST(request: NextRequest) {
       for (const [batchIndex, batchGroups] of batches.entries()) {
         if (request.signal.aborted) break;
 
-        const letterCount = batchGroups.length;
+        const docCount = batchGroups.length;
         send({
           t: "status",
           message:
             batches.length > 1
-              ? `${t.statusStaging(letterCount)} (${batchIndex + 1}/${batches.length})`
-              : t.statusStaging(letterCount),
+              ? `${t.statusStaging(docCount)} (${batchIndex + 1}/${batches.length})`
+              : t.statusStaging(docCount),
         });
 
         const stagingDir = await createStagingDir();
@@ -153,7 +155,7 @@ export async function POST(request: NextRequest) {
           batchGroups.map((g, i) => [instructionGroups[i].representative, g.files.map((f) => f.filename)]),
         );
 
-        const runFileArgs = await writeRunFiles(stagingDir, buildAnalysisSystemPrompt(), effort);
+        const runFileArgs = await writeRunFiles(stagingDir, systemPrompt, effort);
         const instruction = buildInstruction(instructionGroups);
 
         const child = spawnClaude(
@@ -265,42 +267,65 @@ export async function POST(request: NextRequest) {
               return;
             }
 
-            const letters: LetterResult[] = [];
+            const documents: DocumentRecord[] = [];
             const resolvedOriginals: string[] = [];
 
             for (const raw of parsed) {
               if (typeof raw !== "object" || raw === null) continue;
               const item = raw as Record<string, unknown>;
-              const stagedRepresentative = typeof item.filename === "string" ? item.filename : "";
+              const stagedRepresentative = text(item.filename);
               const originals = groupByRepresentative.get(stagedRepresentative);
-              const values: Partial<LetterResult> = {};
-              for (const key of REQUIRED_KEYS) {
-                values[key] = typeof item[key] === "string" ? (item[key] as string) : "";
-              }
-              const language = typeof item.language === "string" ? item.language.trim().toLowerCase() : "";
-              letters.push({
-                filename: originals ? originals.join(", ") : stagedRepresentative,
-                language,
-                sender: values.sender ?? "",
-                recipient: values.recipient ?? "",
-                date: values.date ?? "",
-                subject: values.subject ?? "",
-                short_summary: values.short_summary ?? "",
-                full_description: values.full_description ?? "",
-                action_needed: values.action_needed ?? "",
-              });
+
+              // An id the model invented is worse than no id at all: it would
+              // file the document under a company that doesn't exist and hide
+              // it from every company tab.
+              const claimedId = text(item.company_id).trim();
+              const companyId = validCompanyIds.has(claimedId) ? claimedId : "";
+
+              documents.push(
+                buildRecord(
+                  originals ?? (stagedRepresentative ? [stagedRepresentative] : []),
+                  {
+                    language: text(item.language).trim().toLowerCase(),
+                    sender: text(item.sender),
+                    recipient: text(item.recipient),
+                    date: text(item.date),
+                    subject: text(item.subject),
+                    short_summary: text(item.short_summary),
+                    full_description: text(item.full_description),
+                    action_needed: text(item.action_needed),
+                  },
+                  {
+                    companyId,
+                    companyGuess: text(item.company_name) || text(item.recipient),
+                    companyConfidence:
+                      item.company_confidence === "high" || item.company_confidence === "medium"
+                        ? item.company_confidence
+                        : "low",
+                    status: item.status as DocumentRecord["status"],
+                    docType: item.doc_type as DocumentRecord["docType"],
+                    priority: item.priority as DocumentRecord["priority"],
+                    dueDate: text(item.due_date),
+                    issuedDate: text(item.issued_date),
+                    amount: text(item.amount),
+                    currency: text(item.currency),
+                    reference: text(item.reference),
+                  },
+                ),
+              );
               if (originals) resolvedOriginals.push(...originals);
             }
 
-            if (letters.length > 0) {
-              await appendLetters(outputXlsxPath(), letters);
-              totalDone += letters.length;
+            if (documents.length > 0) {
+              await appendDocuments(documents);
+              await writeWorkbook(outputXlsxPath(), companies, await listDocuments());
+              totalDone += documents.length;
             }
             if (resolvedOriginals.length > 0) {
               await archiveFiles(resolvedOriginals);
             }
 
-            send({ t: "batch_result", letters });
+            send({ t: "batch_result", documents });
             resolve();
           });
         });

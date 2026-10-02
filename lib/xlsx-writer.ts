@@ -1,88 +1,159 @@
 import { promises as fs } from "fs";
 import path from "path";
 import * as XLSX from "xlsx";
-import { FIELD_LABELS, type LetterResult } from "./letter";
+import type { Company } from "./company";
+import { compareForTriage, isOverdue, type DocumentRecord } from "./document";
+import { DOC_TYPE_META, PRIORITY_META, STATUS_META, STATUS_ORDER, type Status } from "./taxonomy";
 
-export type { LetterResult };
+/**
+ * The workbook is a rendering of the document store, not a log appended to.
+ * It is rewritten in full after every change, so re-filing a document in the
+ * app is reflected in the spreadsheet instead of leaving a stale duplicate
+ * row behind — and each company gets its own tab, which is what makes the
+ * file usable when several businesses share one inbox.
+ */
 
-const SHEET_NAME = "Letters";
-/** The title row for each letter block starts with this word, e.g. "Letter 3 — ...". */
-const LETTER_PREFIX = "Letter";
+const HEADERS = [
+  "Status",
+  "Priority",
+  "Type",
+  "Due date",
+  "Overdue",
+  "Amount",
+  "Currency",
+  "Subject",
+  "Sender",
+  "Reference",
+  "Action needed",
+  "Summary",
+  "Document date",
+  "Company (as printed)",
+  "Match",
+  "Language",
+  "Note",
+  "Source file(s)",
+  "Added",
+];
 
-async function fileExists(p: string): Promise<boolean> {
-  try {
-    await fs.access(p);
-    return true;
-  } catch {
-    return false;
-  }
+const COL_WIDTHS = [
+  16, 9, 22, 12, 9, 12, 9, 40, 28, 18, 46, 60, 14, 28, 8, 9, 28, 30, 12,
+].map((wch) => ({ wch }));
+
+function isoDay(ms: number): string {
+  return new Date(ms).toISOString().slice(0, 10);
 }
 
-function countExistingLetters(rows: unknown[][], prefix: string): number {
-  const re = new RegExp(`^${prefix}\\s+(\\d+)`);
-  let max = 0;
-  for (const row of rows) {
-    const cell = row?.[0];
-    if (typeof cell !== "string") continue;
-    const m = re.exec(cell);
-    if (m) max = Math.max(max, Number(m[1]));
+function row(doc: DocumentRecord, now: number): unknown[] {
+  return [
+    STATUS_META[doc.status].label,
+    PRIORITY_META[doc.priority].label,
+    DOC_TYPE_META[doc.docType].label,
+    doc.dueDate,
+    isOverdue(doc, now) ? "YES" : "",
+    doc.amount ? Number(doc.amount) : "",
+    doc.currency,
+    doc.subject,
+    doc.sender,
+    doc.reference,
+    doc.action_needed,
+    doc.short_summary,
+    doc.issuedDate || doc.date,
+    doc.companyGuess,
+    doc.reviewedByUser ? "manual" : doc.companyConfidence,
+    doc.language,
+    doc.note,
+    doc.files.join(", "),
+    isoDay(doc.createdAt),
+  ];
+}
+
+/** Excel forbids : \ / ? * [ ] in sheet names and caps them at 31 characters. */
+function safeSheetName(name: string, used: Set<string>): string {
+  const base = (name.replace(/[:\\/?*[\]]/g, "-").trim() || "Sheet").slice(0, 28);
+  let candidate = base;
+  let n = 2;
+  while (used.has(candidate.toLowerCase())) {
+    candidate = `${base.slice(0, 26)} ${n}`;
+    n += 1;
   }
-  return max;
+  used.add(candidate.toLowerCase());
+  return candidate;
+}
+
+function documentSheet(docs: DocumentRecord[], now: number): XLSX.WorkSheet {
+  const sorted = [...docs].sort((a, b) => compareForTriage(a, b, now));
+  const rows: unknown[][] = [HEADERS, ...sorted.map((d) => row(d, now))];
+  const sheet = XLSX.utils.aoa_to_sheet(rows);
+  sheet["!cols"] = COL_WIDTHS;
+  sheet["!autofilter"] = { ref: XLSX.utils.encode_range({ s: { r: 0, c: 0 }, e: { r: rows.length - 1, c: HEADERS.length - 1 } }) };
+  sheet["!freeze"] = { xSplit: 0, ySplit: 1 };
+  return sheet;
+}
+
+/** Companies down the side, workflow buckets across the top, plus money owed. */
+function overviewSheet(
+  companies: Company[],
+  docs: DocumentRecord[],
+  now: number,
+): XLSX.WorkSheet {
+  const buckets: Status[] = STATUS_ORDER;
+  const rows: unknown[][] = [];
+  rows.push([`Administration overview — generated ${new Date(now).toLocaleString()}`]);
+  rows.push([]);
+  rows.push(["Company", ...buckets.map((s) => STATUS_META[s].label), "Overdue", "Open amount", "Total"]);
+
+  const groups: { label: string; items: DocumentRecord[] }[] = [
+    ...companies.map((c) => ({ label: c.name, items: docs.filter((d) => d.companyId === c.id) })),
+    { label: "Unassigned", items: docs.filter((d) => !companies.some((c) => c.id === d.companyId)) },
+  ];
+
+  for (const group of groups) {
+    const openAmount = group.items
+      .filter((d) => d.status === "needs_action" || d.status === "scheduled")
+      .reduce((sum, d) => sum + (Number(d.amount) || 0), 0);
+    rows.push([
+      group.label,
+      ...buckets.map((s) => group.items.filter((d) => d.status === s).length),
+      group.items.filter((d) => isOverdue(d, now)).length,
+      openAmount ? Number(openAmount.toFixed(2)) : "",
+      group.items.length,
+    ]);
+  }
+
+  const sheet = XLSX.utils.aoa_to_sheet(rows);
+  sheet["!cols"] = [{ wch: 28 }, ...buckets.map(() => ({ wch: 15 })), { wch: 10 }, { wch: 14 }, { wch: 8 }];
+  return sheet;
 }
 
 /**
- * Appends the given letters to the single persistent workbook (creating it
- * the first time). Each letter is written as its own field/value block —
- * label in column A, value in column B — rather than one wide row per
- * letter: long summaries and descriptions overflow into the empty columns
- * to their right instead of being squeezed into narrow fixed cells.
+ * Rewrites the whole workbook: an overview tab, an "Action required" tab that
+ * collects everything still open across all companies, then one tab per
+ * company and one for anything unassigned.
  */
-export async function appendLetters(outputPath: string, letters: LetterResult[]): Promise<void> {
+export async function writeWorkbook(
+  outputPath: string,
+  companies: Company[],
+  docs: DocumentRecord[],
+): Promise<void> {
   await fs.mkdir(path.dirname(outputPath), { recursive: true });
+  const now = Date.now();
 
-  const sheetName = SHEET_NAME;
-  const prefix = LETTER_PREFIX;
-  const labels = FIELD_LABELS;
+  const workbook = XLSX.utils.book_new();
+  const used = new Set<string>();
 
-  let rows: unknown[][];
-  let workbook: XLSX.WorkBook;
+  XLSX.utils.book_append_sheet(workbook, overviewSheet(companies, docs, now), safeSheetName("Overview", used));
 
-  if (await fileExists(outputPath)) {
-    const existingBuffer = await fs.readFile(outputPath);
-    workbook = XLSX.read(existingBuffer, { type: "buffer" });
-    const existingName = workbook.SheetNames.includes(sheetName) ? sheetName : workbook.SheetNames[0];
-    const sheet = workbook.Sheets[existingName];
-    rows = sheet ? (XLSX.utils.sheet_to_json(sheet, { header: 1 }) as unknown[][]) : [];
-  } else {
-    workbook = XLSX.utils.book_new();
-    rows = [];
+  const open = docs.filter((d) => d.status === "needs_action" || d.status === "review" || isOverdue(d, now));
+  XLSX.utils.book_append_sheet(workbook, documentSheet(open, now), safeSheetName("Action required", used));
+
+  for (const company of companies) {
+    const items = docs.filter((d) => d.companyId === company.id);
+    XLSX.utils.book_append_sheet(workbook, documentSheet(items, now), safeSheetName(company.name, used));
   }
 
-  let serial = countExistingLetters(rows, prefix);
-  if (rows.length > 0) rows.push([]);
-
-  for (const l of letters) {
-    serial += 1;
-    rows.push([`${prefix} ${serial} — ${l.subject || ""}`]);
-    rows.push([labels.language, l.language]);
-    rows.push([labels.sender, l.sender]);
-    rows.push([labels.recipient, l.recipient]);
-    rows.push([labels.date, l.date]);
-    rows.push([labels.subject, l.subject]);
-    rows.push([labels.short_summary, l.short_summary]);
-    rows.push([labels.full_description, l.full_description]);
-    rows.push([labels.action_needed, l.action_needed]);
-    rows.push([labels.filename, l.filename]);
-    rows.push([]);
-  }
-
-  const newSheet = XLSX.utils.aoa_to_sheet(rows);
-  newSheet["!cols"] = [{ wch: 22 }, { wch: 70 }];
-
-  if (workbook.SheetNames.includes(sheetName)) {
-    workbook.Sheets[sheetName] = newSheet;
-  } else {
-    XLSX.utils.book_append_sheet(workbook, newSheet, sheetName);
+  const unassigned = docs.filter((d) => !companies.some((c) => c.id === d.companyId));
+  if (unassigned.length > 0 || companies.length === 0) {
+    XLSX.utils.book_append_sheet(workbook, documentSheet(unassigned, now), safeSheetName("Unassigned", used));
   }
 
   // XLSX.writeFile's own Node file-saving path relies on environment

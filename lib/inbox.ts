@@ -22,7 +22,7 @@ export function archiveDir(): string {
 }
 
 export function outputXlsxPath(): string {
-  return path.join(dataDir(), "letters.xlsx");
+  return path.join(dataDir(), "administration.xlsx");
 }
 
 export async function ensureDirs(): Promise<void> {

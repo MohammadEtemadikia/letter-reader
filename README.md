@@ -1,9 +1,12 @@
-# Letter Reader
+# Administration Assistant
 
-A local desktop app that reads photos of letters and writes a structured
-summary of each one — sender, recipient, date, subject, a short summary, a
-fuller description, and any action needed — into an Excel file.
-Persian, English, and Dutch. Runs entirely on your own machine.
+A local desktop app for the paperwork of running several businesses at once.
+Photograph your post — letters, invoices, reminders, tax and government mail,
+contracts, receipts — and each piece is read, **filed under the company it is
+addressed to**, sorted into a workflow bucket (action required, waiting,
+scheduled, handled, archive, needs review) and tagged with its deadline,
+amount and reference. Any language in, a triage dashboard and a per-company
+Excel workbook out. Runs entirely on your own machine.
 
 **There is no API key and no server of its own.** Every analysis runs through
 the Claude Code session already installed and signed in on the machine, on
@@ -25,7 +28,7 @@ your own account's normal Claude usage.
 ### Step 1 — install Claude Code and sign in (once)
 
 This is the one step the app cannot do for you. Claude Code is the engine that
-reads the letters, and it needs your own account.
+reads the documents, and it needs your own account.
 
 ```bash
 npm install -g @anthropic-ai/claude-code
@@ -75,26 +78,73 @@ and `.icns` automatically.
 
 ## Using it
 
-1. **Add letters.** Drag photos into the app window, click to browse (camera
-   roll or gallery — not camera-only), or scan the QR code shown by the
-   "Upload from phone" button to send photos straight from your phone (it
-   must be on the same Wi-Fi).
-2. **Multi-page letters.** If a letter spans more than one photo, select all
-   of its pages in the queue (checkboxes) and click "Combine as one letter" —
-   they're read together and produce a single entry.
-3. **Pick a language.** Defaults to English. Letters can be in any language —
-   Claude reads the original — but the summaries, the app's own interface
-   (set in Vazirmatn for Persian), and the Excel headers follow whichever of
-   English / Persian / Dutch you select.
-4. **Click "Process letters."** Progress streams in live, in batches if the
-   queue is large. Each letter is appended as its own block — not a new file,
-   and not a cramped spreadsheet row — to the single running `letters.xlsx`.
-5. **Open the Excel file** any time with the button next to the results
-   cards — it opens the one persistent file directly (or reveals it in
-   Finder/Explorer), rather than saving a fresh download copy each time.
+### 1. Add your companies (once)
+
+Open the **Companies** tab and add every business whose post you handle. For
+each one, list anything that identifies it on paper:
+
+| Field | Why it matters |
+|---|---|
+| Name | the legal name as it appears in the address block |
+| Other names | trade names, abbreviations, the name without `B.V.` |
+| VAT / registration numbers | the strongest signal — a KvK or VAT number beats a fuzzy name match |
+| Addresses | post addressed to a location rather than a name |
+| Note | free-text hint, e.g. "the holding — only tax and bank post" |
+
+Everything you enter here is handed to the model as the evidence it matches a
+document's recipient against. Documents matching none of them land under
+**Unassigned**, where you can re-file them with one dropdown.
+
+### 2. Scan the post
+
+On the **Intake** tab: drag photos in, click to browse, or scan the QR code
+from "Upload from phone" to send them straight from your phone (same Wi-Fi).
+If one document spans several photos, tick them all and click "Combine as one
+document" — they are read together and produce a single entry.
+
+### 3. Read & file
+
+Click **Read & file documents**. Progress streams in live, in batches if the
+queue is large. For each document the assistant extracts the usual reading —
+sender, recipient, date, subject, summary, details, action needed, in the
+document's own language — and then files it:
+
+| Decision | Values |
+|---|---|
+| Company | one of yours, or Unassigned |
+| Status | action required · waiting on reply · scheduled · handled · archive · needs review |
+| Priority | urgent · high · normal · low |
+| Type | invoice, reminder, tax, government, bank, insurance, contract, legal, utility, HR, medical, property, marketing, personal, other |
+| Facts | due date, document date, amount + currency, reference number |
+
+Anything too unclear to file confidently goes to **Needs review** rather than
+being guessed at, and a shaky company match is flagged on the card.
+
+### 4. Work the dashboard
+
+The **Dashboard** is the triage view: pick a company (or all of them), then
+read down the buckets — most urgent first, overdue items on top, with what is
+outstanding totalled per currency. Every card can be re-filed in place:
+status, company, priority, type and due date are dropdowns, and expanding a
+card shows the full text, a note field, the original scan, and translation
+into Persian, English, Dutch or Turkish.
+
+Re-filing a card is remembered — a document you corrected is marked as
+reviewed by you.
+
+### 5. The workbook
+
+`administration.xlsx` is rewritten from the live data after every change, so
+it never drifts from the app. It has an **Overview** tab (companies × buckets,
+overdue counts, open amounts), an **Action required** tab collecting
+everything still open across all companies, and **one tab per company** plus
+Unassigned — each a filterable table sorted so open items come first.
+
+Open it with the button in the dashboard toolbar; it opens the one persistent
+file directly rather than saving a fresh download copy each time.
 
 Processed photos move from `Inbox` to `Archive` automatically — nothing is
-deleted.
+deleted, and each card can show the scan it came from.
 
 ### Where things live
 
@@ -104,14 +154,15 @@ deleted.
 | Running from source (`npm run dev`) | `~/Documents/Letter Reader/` |
 
 Inside: `Inbox/` (pending photos), `Archive/` (processed photos),
-`letters.xlsx` (the one running output, appended to — never recreated),
-`groups.json` (multi-page letter groupings), `prefs.json` (last language picked).
+`administration.xlsx` (regenerated from the data below), `documents.json`
+(every filed document — the source of truth), `companies.json` (your company
+roster), `groups.json` (multi-page groupings).
 
 ---
 
 ## Sandboxing
 
-Each run copies only the letters being processed into a temporary directory,
+Each run copies only the documents being processed into a temporary directory,
 deleted when the run ends. Inside that run, Claude Code has **read-only
 access and nothing else**: no shell, no writing, no network, no third-party
 MCP servers, and none of your own hooks or plugins. It is also pinned to
@@ -128,10 +179,19 @@ access to the rest of the app, and cannot trigger an analysis run itself.
 
 ```
 app/
-  page.tsx                interface: drag-drop, language, run, results, export
-  api/analyze/route.ts    stages letters, drives Claude Code, streams progress
-  api/inbox/route.ts      list / add / remove pending letters
-  api/export/route.ts     download the current letters.xlsx
+  page.tsx                shell: tabs, the document + company state everything reads
+  components/
+    Dashboard.tsx         company rail, filters, totals, the workflow buckets
+    DocumentCard.tsx      one filed document: triage line, re-filing controls, translation
+    Intake.tsx            drop zone, queue, multi-page grouping, the run
+    Companies.tsx         the company roster editor
+  api/analyze/route.ts    stages scans, drives Claude Code, streams progress, files results
+  api/documents/route.ts  list / re-file / delete filed documents
+  api/companies/route.ts  company CRUD (and detaching documents from a deleted one)
+  api/file/route.ts       serves one archived scan back to a card
+  api/translate/route.ts  on-demand translation of a document's prose
+  api/inbox/route.ts      list / add / remove pending scans
+  api/export/route.ts     download the current administration.xlsx
   api/upload-info/route.ts  LAN URL + QR code for the mobile upload page
   api/health/route.ts     is Claude Code installed and signed in?
 electron/
@@ -143,11 +203,18 @@ scripts/
   after-pack.cjs          copies the server into the packaged app
   upload-server-standalone.cjs  runs the upload server outside Electron (dev/source)
 lib/
-  prompt.ts               operator rules + JSON output contract, FA/EN/NL
+  taxonomy.ts             the buckets, types and priorities — and the rules the model files by
+  document.ts             the DocumentRecord shape + derived views (overdue, triage order)
+  documents.ts            the document store (documents.json)
+  company.ts              the Company shape + how the roster is described to the model
+  companies.ts            the company store (companies.json)
+  json-store.ts           atomic writes + per-file locking for both stores
+  prompt.ts               the read-and-file contract, and the translation prompts
   inbox.ts                persistent Inbox/Archive + per-run staging
   claude-cli.ts           auth check + the run's security hardening
-  i18n.ts                 all interface copy, FA/EN/NL
-  xlsx-writer.ts          appends results to the output workbook
+  i18n.ts                 all interface copy
+  ui.ts                   tone / colour helpers shared by the components
+  xlsx-writer.ts          regenerates the workbook from the stores
 ```
 
 ## Troubleshooting
